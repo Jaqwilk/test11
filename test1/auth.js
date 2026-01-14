@@ -17,17 +17,19 @@ async function getFreshToken() {
     
     const page = await browser.newPage();
     
-    // Ustawiamy User-Agent
+    // 1. ZMIANA: Ustawiamy duży ekran, żeby wymusić widok desktopowy
+    // To często naprawia problem znikających elementów na serwerach
+    await page.setViewport({ width: 1920, height: 1080 });
+    
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-    // Wydłużamy domyślny czas na wszystko do 2 minut (bo serwer jest wolny)
-    page.setDefaultNavigationTimeout(120000);
-    page.setDefaultTimeout(120000);
+    // Długie timeouty dla wolnego serwera
+    page.setDefaultNavigationTimeout(60000);
+    page.setDefaultTimeout(60000);
 
     let token = null;
 
     try {
-        // 1. Nasłuchiwanie tokena
         await page.setRequestInterception(true);
         page.on('request', request => {
             const headers = request.headers();
@@ -41,53 +43,94 @@ async function getFreshToken() {
             request.continue();
         });
 
-        // 2. Wejście na stronę startową
         console.log('⏳ [Auth] Wchodzę na stronę główną...');
         await page.goto('https://my.kozminski.edu.pl', { waitUntil: 'networkidle2' });
         console.log(`🔗 Jesteśmy na: ${page.url()}`);
 
-        // 3. Kliknięcie "Konto uczelniane"
-        // ZWIĘKSZONO TIMEOUT: Czekamy 30s zamiast 5s, bo strona może się wolno ładować
+        // Próba kliknięcia przycisku (opcjonalna)
         try {
             const buttonXPath = "//a[contains(., 'Konto uczelniane')]";
-            console.log('👀 Szukam przycisku "Konto uczelniane"...');
-            await page.waitForSelector('xpath/' + buttonXPath, { timeout: 30000 }); 
+            // Krótki czas na szukanie przycisku, żeby nie tracić czasu
+            await page.waitForSelector('xpath/' + buttonXPath, { timeout: 10000 }); 
             const elements = await page.$$('xpath/' + buttonXPath);
             if (elements.length > 0) {
                 await elements[0].click();
                 console.log('👆 [Auth] Kliknięto "Konto uczelniane"');
-                // Czekamy na nawigację po kliknięciu
-                await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => console.log('⚠️ Nawigacja po kliknięciu trwała zbyt długo'));
+                await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
             }
         } catch (e) {
-            console.log('ℹ️ [Auth] Nie znaleziono przycisku "Konto uczelniane" (może już jesteśmy na logowaniu?)');
+            console.log('ℹ️ [Auth] Przycisk pominięty - zakładam, że jesteśmy na loginie.');
         }
 
-        console.log(`🔗 Aktualny adres przed logowaniem: ${page.url()}`);
+        console.log(`🔗 Adres logowania: ${page.url()}`);
 
-        // 4. Logowanie - EMAIL
-        console.log('✍️ [Auth] Szukam pola email...');
-        // Tutaj robot wcześniej ginął. Teraz poczeka do 2 minut i w razie błędu pokaże URL
-        await page.waitForSelector('#userNameInput'); 
-        await page.type('#userNameInput', process.env.KOZMINSKI_EMAIL);
-        await page.keyboard.press('Enter');
-
-        // 5. Logowanie - HASŁO
-        console.log('✍️ [Auth] Wpisuję hasło...');
-        await page.waitForSelector('#passwordInput');
-        await new Promise(r => setTimeout(r, 2000)); // Mała pauza dla stabilności
-        await page.type('#passwordInput', process.env.KOZMINSKI_PASSWORD);
-        await page.keyboard.press('Enter');
+        // 2. ZMIANA: Szukamy pola loginu na wiele sposobów (ID, Name, Type)
+        // To jest "pancerne" rozwiązanie - zadziała nawet jak zmienią ID elementu
+        const loginSelectors = [
+            '#userNameInput',       // Twoje oryginalne ID
+            'input[name="UserName"]', // Standard ASP.NET
+            'input[type="email"]',    // Standard HTML
+            'input[name="loginfmt"]'  // Standard Microsoft
+        ];
         
+        console.log('✍️ [Auth] Szukam pola email...');
+        let emailInput = null;
+        
+        // Pętla sprawdzająca każdy selektor
+        for (const selector of loginSelectors) {
+            try {
+                await page.waitForSelector(selector, { timeout: 5000 });
+                emailInput = selector;
+                console.log(`✅ Znaleziono pole logowania: ${selector}`);
+                break; // Mamy to! Wychodzimy z pętli
+            } catch (e) {}
+        }
+
+        if (!emailInput) {
+            // DIAGNOSTYKA: Jeśli nadal nic nie widzi, zrzucamy kawałek HTML do logów
+            const html = await page.content();
+            console.error('❌ FATAL: Nie widzę pola logowania. Oto fragment strony (pierwsze 500 znaków):');
+            console.error(html.substring(0, 500));
+            throw new Error('Nie znaleziono żadnego pola pasującego do loginu');
+        }
+
+        // Wpisujemy email do znalezionego pola
+        await page.type(emailInput, process.env.KOZMINSKI_EMAIL);
+        await page.keyboard.press('Enter');
+
+        // HASŁO - podobna strategia, ale tu zazwyczaj #passwordInput działa
+        console.log('✍️ [Auth] Wpisuję hasło...');
+        const passwordSelectors = ['#passwordInput', 'input[type="password"]'];
+        let passwordInput = null;
+        
+        for (const selector of passwordSelectors) {
+            try {
+                await page.waitForSelector(selector, { timeout: 5000 });
+                passwordInput = selector;
+                break;
+            } catch (e) {}
+        }
+        
+        if (passwordInput) {
+            await new Promise(r => setTimeout(r, 1000));
+            await page.type(passwordInput, process.env.KOZMINSKI_PASSWORD);
+            await page.keyboard.press('Enter');
+        } else {
+             // Próbujemy pisać "w ciemno" jeśli nie znalazł pola, czasem to działa
+             await page.keyboard.type(process.env.KOZMINSKI_PASSWORD);
+             await page.keyboard.press('Enter');
+        }
+        
+        // Klikanie Submit
         try {
-            const submitBtn = await page.$('#submitButton');
+            const submitBtn = await page.$('#submitButton, input[type="submit"]');
             if (submitBtn) await submitBtn.click();
         } catch (e) {}
 
-        // 6. Potwierdzenie sesji
+        // Potwierdzenie sesji "Tak / Nie"
         try {
-            await new Promise(r => setTimeout(r, 5000)); // Dłuższa pauza na przetworzenie logowania
-            const staySignedInBtn = await page.$('input[type="submit"]'); 
+            await new Promise(r => setTimeout(r, 3000));
+            const staySignedInBtn = await page.$('input[type="submit"][value="Tak"], input[type="submit"]'); 
             if (staySignedInBtn) {
                 console.log('👆 [Auth] Potwierdzam sesję...');
                 await staySignedInBtn.click();
@@ -95,22 +138,20 @@ async function getFreshToken() {
             }
         } catch (e) {}
 
-        console.log('⏳ [Auth] Zalogowano? Przechodzę do Kalendarza...');
-        await new Promise(r => setTimeout(r, 5000)); 
+        console.log('⏳ [Auth] Logowanie zakończone. Wymuszam Kalendarz...');
+        await new Promise(r => setTimeout(r, 3000)); 
 
-        // 7. Wymuszenie wejścia w Kalendarz
         await page.goto('https://my.kozminski.edu.pl/calendar', { waitUntil: 'domcontentloaded' });
 
-        // 8. Czekamy na token
         console.log('⏳ [Auth] Czekam na token...');
-        for (let i = 0; i < 40; i++) { // Czekamy dłużej (40s)
+        for (let i = 0; i < 30; i++) {
             if (token) break;
             await new Promise(r => setTimeout(r, 1000));
         }
 
     } catch (error) {
-        console.error('❌ [Auth] Błąd krytyczny:', error.message);
-        console.error('🔗 Strona błędu:', page.url()); // To nam powie gdzie dokładnie wywaliło
+        console.error('❌ [Auth] Błąd:', error.message);
+        console.error('🔗 Adres błędu:', page.url());
     } finally {
         if (browser) await browser.close();
     }
