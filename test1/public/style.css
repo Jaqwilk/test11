@@ -1,0 +1,91 @@
+body {
+    background-color: #000;
+    color: white;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+    margin: 0;
+}
+
+.container {
+    width: 100%;
+    max-width: 500px;
+}
+
+.hevy-card {
+    background-color: #1c1c1e; /* Ciemnoszary, typowy dla iOS */
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid #2c2c2e;
+}
+
+/* Nagłówek z Avatarem */
+.header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 15px;
+}
+
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    background-color: #3b82f6;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.user-name {
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.workout-date {
+    color: #8e8e93;
+    font-size: 13px;
+}
+
+.workout-title {
+    margin: 0 0 15px 0;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+/* To jest kluczowe dla listy ćwiczeń! */
+.workout-description {
+    font-family: monospace; /* Czcionka techniczna, ładnie wyrównuje liczby */
+    white-space: pre-wrap;  /* To sprawia, że entery działają! */
+    color: #d1d1d6;
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 15px;
+    padding-left: 10px;
+    border-left: 2px solid #3b82f6; /* Niebieski pasek obok ćwiczeń */
+}
+
+.workout-meta {
+    font-size: 14px;
+    color: #8e8e93;
+    margin-bottom: 15px;
+    font-weight: bold;
+}
+
+.hevy-footer {
+    font-size: 12px;
+    color: #636366;
+    border-top: 1px solid #2c2c2e;
+    padding-top: 10px;
+    display: flex;
+    gap: 5px;
+}

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mój Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        
+        <header>
+            <h1>📅 Plan na ten tydzień (ALK)</h1>
+        </header>
+        <div id="schedule-container">
+            <p class="loading">Pobieranie planu...</p>
+        </div>
+
+        <header style="margin-top: 40px;">
+            <h1>💪 Ostatnie Treningi</h1>
+        </header>
+        <div id="workouts-container">
+            <p class="loading">Ładowanie treningów...</p>
+        </div>
+
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. PLAN ZAJĘĆ (Widok Całego Tygodnia)
+        // ==========================================
+        fetch('/api/university/schedule')
+            .then(res => res.json())
+            .then(data => {
+                const container = document.getElementById('schedule-container');
+                container.innerHTML = '';
+                
+                let allSemesterClasses = [];
+
+                // 1. Bezpieczne wyciąganie danych z "szuflady"
+                try {
+                    if (data[0] && data[0].classesInformations && data[0].classesInformations.length > 0) {
+                        allSemesterClasses = data[0].classesInformations[0].details || [];
+                    }
+                } catch (e) {
+                    console.error("Błąd struktury danych:", e);
+                }
+
+                // 2. LOGIKA DAT: Obliczamy ten tydzień (Poniedziałek - Niedziela)
+                const now = new Date();
+                const currentDay = now.getDay(); // 0=Niedziela, 1=Poniedziałek...
+                
+                // Obliczamy przesunięcie, żeby znaleźć poniedziałek
+                // Jeśli jest niedziela (0), cofamy się o 6 dni. Jeśli inny dzień, cofamy się o (dzień - 1)
+                const diffToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+                
+                // Ustawiamy datę na Poniedziałek 00:00
+                const monday = new Date(now);
+                monday.setDate(now.getDate() + diffToMonday);
+                monday.setHours(0, 0, 0, 0);
+
+                // Ustawiamy datę na Niedzielę 23:59
+                const sunday = new Date(monday);
+                sunday.setDate(monday.getDate() + 6);
+                sunday.setHours(23, 59, 59, 999);
+
+                console.log(`📅 Zakres tygodnia: ${monday.toLocaleDateString()} - ${sunday.toLocaleDateString()}`);
+
+                // 3. FILTROWANIE: Tylko zajęcia z tego tygodnia
+                const currentWeekClasses = allSemesterClasses.filter(item => {
+                    const classDate = new Date(item.start);
+                    return classDate >= monday && classDate <= sunday;
+                });
+
+                // 4. SORTOWANIE: Chronologicznie
+                currentWeekClasses.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+                // 5. OBSŁUGA BRAKU ZAJĘĆ
+                if (currentWeekClasses.length === 0) {
+                    container.innerHTML = '<p style="text-align:center; padding:10px; color:#888;">Luz! Brak zajęć w tym tygodniu.</p>';
+                } else {
+                    // 6. GENEROWANIE KAFELKÓW
+                    currentWeekClasses.forEach(item => {
+                        const subject = item.subjectName || item.title || "Zajęcia";
+                        const room = item.roomNo || "Brak sali";
+                        const type = item.subjectTypeShortcut || item.subjectType || ""; 
+                        
+                        const dateObj = new Date(item.start);
+                        
+                        // Formatowanie daty (np. "Poniedziałek")
+                        const dayName = dateObj.toLocaleString('pl-PL', { weekday: 'long' });
+                        const dateStr = dateObj.toLocaleString('pl-PL', { day: 'numeric', month: 'numeric' });
+                        const timeStr = dateObj.toLocaleString('pl-PL', { hour: '2-digit', minute:'2-digit' });
+
+                        // Sprawdzamy czy to dzisiaj (dla wyróżnienia)
+                        const isToday = new Date().toDateString() === dateObj.toDateString();
+                        
+                        // Jeśli dziś: zielony pasek. Jeśli inny dzień: standardowy złoty (zdefiniowany w CSS jako border-left)
+                        // Nadpisujemy styl inline tylko dla dzisiejszych zajęć
+                        const activeStyle = isToday ? 'border-left: 5px solid #28a745;' : '';
+                        const dateColor = isToday ? '#28a745' : '#d4af37'; // Zielony tekst daty dla dziś
+
+                        const card = `
+                            <div class="uni-card" style="${activeStyle}">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <div class="uni-time" style="color:${dateColor}; font-size:14px;">
+                                        ${dayName.charAt(0).toUpperCase() + dayName.slice(1)} <span style="color:#666">(${dateStr})</span>
+                                    </div>
+                                    <div class="uni-time" style="font-size:1.2em;">${timeStr}</div>
+                                </div>
+                                
+                                <div class="uni-subject">
+                                    ${subject} 
+                                    <span style="font-size:0.8em; font-weight:normal; color:#888; margin-left:5px;">(${type})</span>
+                                </div>
+                                
+                                <div class="uni-room">
+                                    📍 ${room}
+                                </div>
+                            </div>
+                        `;
+                        container.innerHTML += card;
+                    });
+                }
+            })
+            .catch(err => {
+                console.error("Błąd ALK:", err);
+                document.getElementById('schedule-container').innerHTML = 
+                    '<p style="color:#d44; text-align:center;">Błąd pobierania. Sprawdź czy token nie wygasł.</p>';
+            });
+
+
+        // ==========================================
+        // 2. TRENINGI (HEVY / STRAVA)
+        // ==========================================
+        fetch('/api/workouts')
+            .then(res => res.json())
+            .then(data => {
+                const container = document.getElementById('workouts-container');
+                container.innerHTML = '';
+
+                if (!data || data.length === 0) {
+                    container.innerHTML = '<p style="text-align:center; color:#666;">Brak ostatnich treningów.</p>';
+                    return;
+                }
+
+                data.forEach(workout => {
+                    let exercises = workout.description ? workout.description.replace(/\n/g, '<br>') : '';
+                    
+                    const card = `
+                        <div class="hevy-card">
+                            <div class="header-row">
+                                <div class="user-avatar">NS</div>
+                                <div class="user-info">
+                                    <span class="user-name">${workout.userName} – Workout</span>
+                                    <span class="workout-date">${workout.fullDate}</span>
+                                </div>
+                            </div>
+                            <h2 class="workout-title">${workout.activityName}</h2>
+                            <div class="workout-description">${exercises}</div>
+                            <div class="workout-meta">⏱️ ${workout.duration}</div>
+                            <div class="hevy-footer">
+                                ${workout.source} <span style="color: #3b82f6;">Hevy</span>
+                            </div>
+                        </div>
+                    `;
+                    container.innerHTML += card;
+                });
+            })
+            .catch(err => {
+                console.error("Błąd Hevy:", err);
+                document.getElementById('workouts-container').innerHTML = '<p style="text-align:center">Problem z ładowaniem treningów.</p>';
+            });
+    </script>
+</body>
+</html>
