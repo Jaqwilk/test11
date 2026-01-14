@@ -4,7 +4,7 @@ USER root
 # Kopiujemy pliki projektu
 WORKDIR /usr/src/app
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 COPY . .
 
 # Uprawnienia dla użytkownika pptruser (domyślny w tym obrazie)
